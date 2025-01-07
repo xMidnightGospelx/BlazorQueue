@@ -1,0 +1,132 @@
+﻿@page "/"
+@using Azure.Storage.Queues
+@using Azure.Storage.Queues.Models
+@rendermode InteractiveServer
+@inject QueueServiceClient queueServiceClient
+@inject NavigationManager _navigationManager
+
+<div class="container-fluid">
+    <h3 class="text-lg-center">Queue Management</h3>
+    <ul class="list-group m-lg-2">
+        @foreach (var item in queues)
+        {
+            <li class="list-group-item">
+                <input type="checkbox" class="form-check-input me-1" id="@item.Name" @onchange="@((e)=>handleCheckItem(item.Name,e))" />
+                <label class="form-check-label" for="@item.Name">@item.Name</label>
+            </li>
+        }
+    </ul>
+</div>
+
+<div class="container text-center">
+    <div class="row row-cols-1">
+        <div class="col">
+            <input type="text" class="form-control m-lg-2 w-25" placeholder="name of new queue" id="queue-name" @bind="queueName" />
+        </div>
+    </div>
+    <div class="row">
+        <div class="col-2">
+            <button type="button" class="btn btn-primary" @onclick="AddNewQueue">Add New Queue</button>
+        </div>
+        <div class="col-10 align-self-lg-end">
+            <button type="button" class="btn btn-danger" @onclick="DeleteSelectedAsync">Delete Selected Queue</button>
+        </div>
+    </div>
+</div>
+
+@if (!string.IsNullOrEmpty(errorMessage))
+{
+    <p style="color:red">@errorMessage</p>
+}
+@if (isLoading)
+{
+    <p>Loading...</p>
+}
+
+@code {
+    private string queueName;
+    private string errorMessage;
+    private bool isLoading;
+    List<QueueItem> queues = new();
+    List<string> queuesToRemove = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await base.OnInitializedAsync();
+        await LoadQueuesAsync();
+    }
+
+    private async Task AddNewQueue()
+    {
+        if (string.IsNullOrWhiteSpace(queueName))
+        {
+            errorMessage = "Queue name cannot be empty.";
+            return;
+        }
+
+        try
+        {
+            await queueServiceClient.CreateQueueAsync(queueName);
+            await LoadQueuesAsync();
+            queueName = string.Empty; // Clear the input field
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error creating queue: {ex.Message}";
+        }
+    }
+
+    private async Task LoadQueuesAsync()
+    {
+        try
+        {
+            isLoading = true;
+            errorMessage = string.Empty;
+            queues.Clear();
+            var result = queueServiceClient.GetQueuesAsync();
+
+            await foreach (QueueItem item in result)
+            {
+                queues.Add(item);
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error loading queues: {ex.Message}";
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private void handleCheckItem(string queueName, ChangeEventArgs e)
+    {
+        if ((bool)e.Value)
+        {
+            queuesToRemove.Add(queueName);
+        }
+        else
+        {
+            queuesToRemove.Remove(queueName);
+        }
+    }
+
+    private async Task DeleteSelectedAsync(MouseEventArgs e)
+    {
+        try
+        {
+            foreach (var item in queuesToRemove)
+            {
+                await queueServiceClient.DeleteQueueAsync(item);
+            }
+            queuesToRemove.Clear();
+            await LoadQueuesAsync();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error deleting queues: {ex.Message}";
+        }
+    }
+}
+
