@@ -1,0 +1,285 @@
+﻿@page "/queueitem/{QueueName}"
+@using Azure.Storage.Queues
+@using Azure.Storage.Queues.Models
+@rendermode InteractiveServer
+@inject QueueServiceClient queueServiceClient
+<h3>@QueueName</h3>
+
+<!-- A section to display some properties of the queue: use Azure SDK for Queue -->
+<!--
+    Account Name
+    CanGenerateSasUri
+    MaxPeekableMessage
+    MessageMaxBytes
+    MessageUri
+    Name
+-->
+<div>
+    <h4>Queue Details</h4>
+    <ul>
+        <li>Account Name: @queueProperties?.AccountName</li>
+        <li>Can Generate SAS URI: @queueProperties?.CanGenerateSasUri</li>
+        <li>Max Peekable Messages: @queueProperties?.MaxPeekableMessages</li>
+        <li>Message Max Bytes: @qclient.</li>
+        <li>Message URI: @queueProperties?.MessageUri</li>
+        <li>Name: @queueProperties?.Name</li>
+    </ul>
+</div>
+
+<!-- A simple form with text and button that adds a message to the queue -->
+<div>
+    <h4>Add Message to Queue</h4>
+    <input type="text" @bind="newMessage" placeholder="Enter your message" />
+    <button @onclick="AddMessageToQueue" class="btn-primary">Add Message</button>
+</div>
+
+<!-- A Section with Button that retrieves and lists all items in the queue -->
+<div>
+    <h4>Queue Messages</h4>
+    <p>Only the first ten message will display</p>
+    <button @onclick="RetrieveMessages" class="btn-success">Retrieve Messages</button>
+    <button @onclick="DeleteSelectedMessages" class="btn-primary">Delete Selected Messages</button>
+    <button @onclick="ClearMessages" class="btn-warning ms-2">Clear Messages</button>
+    <ul>
+        @foreach (var message in messages)
+        {
+            <li>
+                <input type="checkbox" @bind="message.IsSelected" />
+                @message.MessageText
+            </li>
+        }
+    </ul>
+</div>
+
+@if (!string.IsNullOrEmpty(errorMessage))
+{
+    <p style="color:red">@errorMessage</p>
+}
+@if (isLoading)
+{
+    <p>Loading...</p>
+}
+
+@code {
+    [Parameter]
+    public string QueueName { get; set; }
+    private QueueClient qclient;
+
+    // override Task OnParametersSetAsync()
+    // Use injected queueserviceclient
+    // .GetQueueClient(QueueName)
+    // ReceiveMessagesAsync same as dequeue
+    // SendMessageAsync same as enqueue
+    private QueueProperties queueProperties;
+    private string newMessage;
+    private string errorMessage;
+    private bool isLoading;
+    private List<QueueMessageWrapper> messages = new();
+    
+    protected override async Task OnParametersSetAsync()
+    {
+        qclient = queueServiceClient.GetQueueClient(QueueName);
+        var properties = await qclient.GetPropertiesAsync();
+        await base.OnParametersSetAsync();
+        await LoadQueuePropertiesAsync();
+        totalMessageSize = await GetTotalMessageSizeAsync();
+    }
+
+    private async Task LoadQueuePropertiesAsync()
+    {
+        try
+        {
+            isLoading = true;
+            errorMessage = string.Empty;
+            var queueClient = queueServiceClient.GetQueueClient(QueueName);
+            var properties = await queueClient.GetPropertiesAsync();
+            queueProperties = new QueueProperties
+                {
+                    AccountName = queueClient.AccountName,
+                    CanGenerateSasUri = queueClient.CanGenerateSasUri,
+                    MaxPeekableMessages = properties.Value.ApproximateMessagesCount,
+                    MessageMaxBytes = totalMessageSize, // Hard coded for now
+                    MessageUri = queueClient.Uri.ToString(),
+                    Name = queueClient.Name,
+                    ApproximateMessagesCount = properties.Value.ApproximateMessagesCount
+                };
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error loading queue properties: {ex.Message}";
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task AddMessageToQueue()
+    {
+        if (string.IsNullOrWhiteSpace(newMessage))
+        {
+            errorMessage = "Message cannot be empty.";
+            return;
+        }
+
+        try
+        {
+            var queueClient = queueServiceClient.GetQueueClient(QueueName);
+            await queueClient.SendMessageAsync(newMessage);
+            newMessage = string.Empty; // Clear the input field
+            await LoadQueuePropertiesAsync(); // Refresh properties to update message count
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error adding message to queue: {ex.Message}";
+        }
+    }
+
+    private async Task RetrieveMessages()
+    {
+        try
+        {
+            isLoading = true;
+            errorMessage = string.Empty;
+            messages.Clear();
+            var queueClient = queueServiceClient.GetQueueClient(QueueName);
+            var receivedMessages = await queueClient.ReceiveMessagesAsync(maxMessages: 10);
+
+            foreach (var message in receivedMessages.Value)
+            {
+                messages.Add(new QueueMessageWrapper
+                    {
+                        MessageId = message.MessageId,
+                        PopReceipt = message.PopReceipt,
+                        MessageText = message.MessageText
+                    });
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error retrieving messages: {ex.Message}";
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task DeleteSelectedMessages()
+    {
+        try
+        {
+            isLoading = true;
+            errorMessage = string.Empty;
+            var queueClient = queueServiceClient.GetQueueClient(QueueName);
+
+            foreach (var message in messages.Where(m => m.IsSelected))
+            {
+                await queueClient.DeleteMessageAsync(message.MessageId, message.PopReceipt);
+            }
+
+            await RetrieveMessages(); // Refresh the message list
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error deleting messages: {ex.Message}";
+        }
+        finally
+        {
+            isLoading = false;
+        }
+
+    }
+
+    private async Task ClearMessages()
+    {
+        try
+        {
+            isLoading = true;
+            errorMessage = string.Empty;
+            var queueClient = queueServiceClient.GetQueueClient(QueueName);
+
+            // Retrieve all messages in the queue
+            var receivedMessages = await queueClient.ReceiveMessagesAsync(maxMessages: 32);
+
+            while (receivedMessages.Value.Length > 0)
+            {
+                foreach (var message in receivedMessages.Value)
+                {
+                    await queueClient.DeleteMessageAsync(message.MessageId, message.PopReceipt);
+                }
+
+                // Retrieve the next batch of messages
+                receivedMessages = await queueClient.ReceiveMessagesAsync(maxMessages: 32);
+            }
+
+            messages.Clear(); // Clear the local list of messages
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error clearing messages: {ex.Message}";
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task<long> GetTotalMessageSizeAsync()
+    {
+        long totalSize = 0;
+        try
+        {
+            var queueClient = queueServiceClient.GetQueueClient(QueueName);
+            var receivedMessages = await queueClient.ReceiveMessagesAsync(maxMessages: 32);
+
+            while (receivedMessages.Value.Length > 0)
+            {
+                foreach (var message in receivedMessages.Value)
+                {
+                    totalSize += System.Text.Encoding.UTF8.GetByteCount(message.MessageText);
+                }
+
+                // Retrieve the next batch of messages
+                receivedMessages = await queueClient.ReceiveMessagesAsync(maxMessages: 32);
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error calculating total message size: {ex.Message}";
+        }
+
+        return totalSize;
+    }
+
+    private long totalMessageSize;
+
+    private async Task CalculateTotalMessageSize()
+    {
+        isLoading = true;
+        errorMessage = string.Empty;
+        totalMessageSize = await GetTotalMessageSizeAsync();
+        isLoading = false;
+    }
+
+
+    private class QueueProperties
+    {
+        public string AccountName { get; set; }
+        public bool CanGenerateSasUri { get; set; }
+        public int MaxPeekableMessages { get; set; }
+        public long MessageMaxBytes { get; set; }
+        public string MessageUri { get; set; }
+        public string Name { get; set; }
+        public int? ApproximateMessagesCount { get; set; }
+    }
+
+    private class QueueMessageWrapper
+    {
+        public string MessageId { get; set; }
+        public string PopReceipt { get; set; }
+        public string MessageText { get; set; }
+        public bool IsSelected { get; set; }
+    }
+}
+

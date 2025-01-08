@@ -3,7 +3,8 @@
 @using Azure.Storage.Queues.Models
 @rendermode InteractiveServer
 @inject QueueServiceClient queueServiceClient
-@inject NavigationManager _navigationManager
+
+
 
 <div class="container-fluid">
     <h3 class="text-lg-center">Queue Management</h3>
@@ -11,9 +12,15 @@
         @foreach (var item in queues)
         {
             <li class="list-group-item">
-                <input type="checkbox" class="form-check-input me-1" id="@item.Name" @onchange="@((e)=>handleCheckItem(item.Name,e))" />
-                <label class="form-check-label" for="@item.Name">@item.Name</label>
+                <input type="checkbox" class="form-check-input me-1" id="@item.Name" @onchange="@((e) => handleCheckItem(item.Name,e))" />
+                <a href="/queueitem/@item.Name">
+                    <label class="form-check-label" for="@item.Name">
+                        @item.Name
+                    </label>
+                </a>
+                <span class="badge bg-secondary">@item.MessageCount</span>
             </li>
+
         }
     </ul>
 </div>
@@ -25,7 +32,7 @@
         </div>
     </div>
     <div class="row">
-        <div class="col-2">
+        <div class="col-2 ">
             <button type="button" class="btn btn-primary" @onclick="AddNewQueue">Add New Queue</button>
         </div>
         <div class="col-10 align-self-lg-end">
@@ -34,74 +41,48 @@
     </div>
 </div>
 
-@if (!string.IsNullOrEmpty(errorMessage))
-{
-    <p style="color:red">@errorMessage</p>
-}
-@if (isLoading)
-{
-    <p>Loading...</p>
-}
-
 @code {
+    private class QueueItemWithCount
+    {
+        public string Name { get; set; }
+        public int MessageCount { get; set; }
+    }
     private string queueName;
-    private string errorMessage;
-    private bool isLoading;
-    List<QueueItem> queues = new();
+    List<QueueItemWithCount> queues = new();
     List<string> queuesToRemove = new();
-
     protected override async Task OnInitializedAsync()
     {
-        await base.OnInitializedAsync();
-        await LoadQueuesAsync();
+        await loadQueue();
     }
-
     private async Task AddNewQueue()
     {
-        if (string.IsNullOrWhiteSpace(queueName))
-        {
-            errorMessage = "Queue name cannot be empty.";
-            return;
-        }
-
-        try
-        {
-            await queueServiceClient.CreateQueueAsync(queueName);
-            await LoadQueuesAsync();
-            queueName = string.Empty; // Clear the input field
-        }
-        catch (Exception ex)
-        {
-            errorMessage = $"Error creating queue: {ex.Message}";
-        }
+        await queueServiceClient.CreateQueueAsync(queueName);
+        await loadQueue();
+        this.StateHasChanged();
     }
-
-    private async Task LoadQueuesAsync()
+    private async Task loadQueue()
     {
-        try
-        {
-            isLoading = true;
-            errorMessage = string.Empty;
-            queues.Clear();
-            var result = queueServiceClient.GetQueuesAsync();
+        queues.Clear();
+        var result = queueServiceClient.GetQueuesAsync(QueueTraits.Metadata);
 
-            await foreach (QueueItem item in result)
-            {
-                queues.Add(item);
-            }
-        }
-        catch (Exception ex)
+        await foreach (QueueItem item in result)
         {
-            errorMessage = $"Error loading queues: {ex.Message}";
-        }
-        finally
-        {
-            isLoading = false;
+            var queueClient = queueServiceClient.GetQueueClient(item.Name);
+            var properties = await queueClient.GetPropertiesAsync();
+            queues.Add(new QueueItemWithCount
+                {
+                    Name = item.Name,
+                    MessageCount = properties.Value.ApproximateMessagesCount
+                });
         }
     }
-
     private void handleCheckItem(string queueName, ChangeEventArgs e)
     {
+        if (queueName is null)
+        {
+            throw new ArgumentNullException(nameof(queueName));
+        }
+
         if ((bool)e.Value)
         {
             queuesToRemove.Add(queueName);
@@ -110,23 +91,18 @@
         {
             queuesToRemove.Remove(queueName);
         }
+        return;
     }
-
     private async Task DeleteSelectedAsync(MouseEventArgs e)
     {
-        try
+        foreach (var item in queuesToRemove)
         {
-            foreach (var item in queuesToRemove)
-            {
-                await queueServiceClient.DeleteQueueAsync(item);
-            }
-            queuesToRemove.Clear();
-            await LoadQueuesAsync();
+            await queueServiceClient.DeleteQueueAsync(item);
         }
-        catch (Exception ex)
-        {
-            errorMessage = $"Error deleting queues: {ex.Message}";
-        }
+        queuesToRemove.Clear();
+        await loadQueue();
+        this.StateHasChanged();
+
     }
 }
 

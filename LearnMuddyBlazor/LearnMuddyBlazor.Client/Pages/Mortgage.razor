@@ -1,0 +1,174 @@
+﻿@page "/mortgage"
+
+<MudGrid>
+    <MudItem xs="12">
+        <MudPaper Class="d-flex align-center justify-center mud-width-full py-8">
+            <MudSlider TickMarks="true" Step="100000" Min="100000" Max="1000000" @bind-Value="loanAmount" />
+            <MudNumericField @bind-Value="loanAmount" Step="10000" Label="Loan Amount" Variant="Variant.Outlined" />
+        </MudPaper>
+    </MudItem>
+    <MudItem xs="12" sm="6">
+        <MudPaper Class="d-flex align-center justify-center mud-width-full py-8">
+            <MudNumericField @bind-Value="DecimalValueYear" Max="30" Label="Loan Years" Variant="Variant.Outlined" Step="1M" />
+        </MudPaper>
+    </MudItem>
+    <MudItem xs="12" sm="6">
+        <MudPaper Class="d-flex align-center justify-center mud-width-full py-8">
+            <MudNumericField @bind-Value="DecimalValueIRate" Label="Interest Rate" Variant="Variant.Outlined" Step=".1M" />
+        </MudPaper>
+        <MudButton Disabled="@_processing" OnClick="ProcessSomething" Variant="Variant.Filled" Color="Color.Primary">
+            @if (_processing)
+            {
+                <MudProgressCircular Class="ms-n1" Size="Size.Small" Indeterminate="true" />
+                <MudText Class="ms-2">Processing</MudText>
+            }
+            else
+            {
+                <MudText>Payments Breakdown</MudText>
+            }
+        </MudButton>
+        <MudButton Disabled="@_processing" OnClick="FirstPayment" Variant="Variant.Filled" Color="Color.Primary">
+            @if (_processing)
+            {
+                <MudProgressCircular Class="ms-n1" Size="Size.Small" Indeterminate="true" />
+                <MudText Class="ms-2">Processing</MudText>
+            }
+            else
+            {
+                <MudText>1st Payment</MudText>
+            }
+        </MudButton>
+    </MudItem>
+    <MudItem xs="6" sm="6">
+        <MudPaper Class="d-flex align-center justify-space-evenly mud-width-full py-8"><!--fix alignment-->
+            
+            @if (firstPayment != null)
+            {
+                <MudPaper Class="d-flex align-center justify-space-evenly mud-width-full py-8">
+                    <!--fix alignment-->
+                    <MudText Typo="Typo.h6">First Payment Details</MudText>
+                    <MudText>Principal: @firstPayment.PrincipalPaid.ToString("C")</MudText>
+                    <MudText>Interest: @firstPayment.InterestPaid.ToString("C")</MudText>
+                    <MudText>Balance: @firstPayment.RemainingBalance.ToString("C")</MudText>
+                </MudPaper>
+                <MudGrid>
+                    <MudItem xs="6">
+                        <MudPaper Class="d-flex align-center justify-space-evenly mud-width-full py-8">
+                            <!--fix alignment-->
+                            <MudText>First Payment: </MudText>
+                            <MudText Typo="Typo.h6" >@firstSum</MudText>
+                        </MudPaper>
+                    </MudItem>
+
+                    <MudChart ChartType="ChartType.Donut" Width="300px" Height="300px" InputData="@data" InputLabels="@labels">
+                        <CustomGraphics>
+                            <text class="donut-inner-text" x="47%" y="50%" dominant-baseline="middle" text-anchor="middle" fill="#594ae2ff" font-family="Helvetica" font-size="5">@data.Sum().ToString("C")</text>
+                        </CustomGraphics>
+                    </MudChart>
+                </MudGrid>
+            }
+
+        </MudPaper>
+    </MudItem>
+    <MudItem xs="6" sm="6">
+        <MudPaper Class="d-flex align-center justify-center mud-width-full py-8">
+            
+            @if (paymentDetails.Any())
+            {
+                <MudDataGrid Items="@paymentDetails">
+                    <Columns>
+                        <PropertyColumn Property="x => x.Month" Title="Month" />
+                        <PropertyColumn Property="x => x.PrincipalPaid" Title="Principal Paid" Format="C" />
+                        <PropertyColumn Property="x => x.InterestPaid" Title="Interest Paid" Format="C" />
+                        <PropertyColumn Property="x => x.RemainingBalance" Title="Remaining Balance" Format="C" />
+                    </Columns>
+                </MudDataGrid>
+            }
+            
+        </MudPaper>
+    </MudItem>
+    <MudItem xs="6" sm="3">
+        <MudPaper Class="d-flex align-center justify-center mud-width-full py-8">xs=6 sm=3</MudPaper>
+    </MudItem>
+    <MudItem xs="6" sm="3">
+        <MudPaper Class="d-flex align-center justify-center mud-width-full py-8">xs=6 sm=3</MudPaper>
+    </MudItem>
+</MudGrid>
+
+
+
+
+
+@code {
+    public decimal DecimalValueIRate { get; set; }
+    public decimal DecimalValueYear { get; set; }
+    public decimal loanAmount { get; set; }
+    private bool _processing = false;
+    private List<PaymentDetail> paymentDetails = new();
+    private PaymentDetail firstPayment;
+    private string firstSum;
+    public double[] data;
+    public string[] labels;
+
+    protected override void OnInitialized()
+    {
+        DecimalValueYear = 30M;
+        DecimalValueIRate = 6.8M;
+        loanAmount = 100000M; // Initialize loanAmount with a default value
+        data = new double[0];
+        labels = new string[] { "Principal", "Interest", "Insurance", "Tax" };
+    }
+
+    async Task FirstPayment()
+    {
+        _processing = true;
+        paymentDetails = await CalculateAmortizationSchedule(loanAmount, DecimalValueIRate, DecimalValueYear);
+        firstPayment = paymentDetails.FirstOrDefault();
+        firstSum = (firstPayment.PrincipalPaid + firstPayment.InterestPaid).ToString("C");
+        data = new double[] { (double)firstPayment.PrincipalPaid, (double)firstPayment.InterestPaid, 28, 15 };
+        _processing = false;
+    }
+
+    async Task ProcessSomething()
+    {
+        _processing = true;
+        paymentDetails = await CalculateAmortizationSchedule(loanAmount, DecimalValueIRate, DecimalValueYear);
+        _processing = false;
+    }
+
+    private Task<List<PaymentDetail>> CalculateAmortizationSchedule(decimal principal, decimal annualInterestRate, decimal years)
+    {
+        var paymentDetails = new List<PaymentDetail>();
+        var monthlyInterestRate = annualInterestRate / 100 / 12;
+        var numberOfPayments = years * 12;
+        var monthlyPayment = principal * monthlyInterestRate / (1 - (decimal)Math.Pow((double)(1 + monthlyInterestRate), -(double)numberOfPayments));
+
+        decimal remainingBalance = principal;
+
+        for (int month = 1; month <= numberOfPayments; month++)
+        {
+            var interestPaid = remainingBalance * monthlyInterestRate;
+            var principalPaid = monthlyPayment - interestPaid;
+            remainingBalance -= principalPaid;
+
+            paymentDetails.Add(new PaymentDetail
+            {
+                Month = month,
+                PrincipalPaid = principalPaid,
+                InterestPaid = interestPaid,
+                RemainingBalance = remainingBalance
+            });
+        }
+
+        return Task.FromResult(paymentDetails);
+    }
+
+    public class PaymentDetail
+    {
+        public int Month { get; set; }
+        public decimal PrincipalPaid { get; set; }
+        public decimal InterestPaid { get; set; }
+        public decimal RemainingBalance { get; set; }
+    }
+}
+

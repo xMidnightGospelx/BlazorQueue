@@ -1,0 +1,46 @@
+﻿@page "/queue-message-manager"
+@using Azure.Storage.Queues
+@using Azure.Storage.Queues.Models
+@inject QueueServiceClient queueServiceClient
+
+<div class="container">
+    <div class="mb-0 ">
+        <label for="message" class="form-label">Message</label>
+        <input type="text" class="form-control" id="message" @bind="message" />
+    </div>
+    <button class="btn btn-primary" @onclick="InsertMessage">Insert Message</button>
+    <button class="btn btn-secondary" @onclick="RetrieveMessages">Retrieve Messages</button>
+    <ul class="list-group mt-3">
+        @foreach (var msg in messages)
+        {
+            <li class="list-group-item">@msg</li>
+        }
+    </ul>
+</div>
+
+@code {
+    [Parameter]
+    public string QueueName { get; set; }
+
+    private string message;
+    private List<string> messages = new();
+
+    private async Task InsertMessage()
+    {
+        var queueClient = queueServiceClient.GetQueueClient(QueueName);
+        await queueClient.SendMessageAsync(message);
+        message = string.Empty;
+    }
+
+    private async Task RetrieveMessages()
+    {
+        var queueClient = queueServiceClient.GetQueueClient(QueueName);
+        var retrievedMessages = await queueClient.ReceiveMessagesAsync(maxMessages: 10);
+
+        messages.Clear();
+        foreach (var msg in retrievedMessages.Value)
+        {
+            messages.Add(msg.MessageText);
+        }
+    }
+}
