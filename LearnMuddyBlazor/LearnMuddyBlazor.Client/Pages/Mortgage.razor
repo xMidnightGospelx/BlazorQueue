@@ -16,26 +16,15 @@
         <MudPaper Class="d-flex align-center justify-center mud-width-full py-8">
             <MudNumericField @bind-Value="DecimalValueIRate" Label="Interest Rate" Variant="Variant.Outlined" Step=".1M" />
         </MudPaper>
-        <MudButton Disabled="@_processing" OnClick="ProcessSomething" Variant="Variant.Filled" Color="Color.Primary">
-            @if (_processing)
-            {
-                <MudProgressCircular Class="ms-n1" Size="Size.Small" Indeterminate="true" />
-                <MudText Class="ms-2">Processing</MudText>
-            }
-            else
-            {
-                <MudText>Payments Breakdown</MudText>
-            }
-        </MudButton>
         <MudButton Disabled="@_processing" OnClick="FirstPayment" Variant="Variant.Filled" Color="Color.Primary">
             @if (_processing)
             {
-                <MudProgressCircular Class="ms-n1" Size="Size.Small" Indeterminate="true" />
+                <MudProgressCircular Class="ms-n1" Size="Size.Large" Indeterminate="true" />
                 <MudText Class="ms-2">Processing</MudText>
             }
             else
             {
-                <MudText>1st Payment</MudText>
+                <MudText>Payment Brakedown</MudText>
             }
         </MudButton>
     </MudItem>
@@ -75,7 +64,7 @@
             
             @if (paymentDetails.Any())
             {
-                <MudDataGrid Items="@paymentDetails">
+                <MudDataGrid Items="@paymentDetails" Hover="true" Bordered="true">
                     <Columns>
                         <PropertyColumn Property="x => x.Month" Title="Month" />
                         <PropertyColumn Property="x => x.PrincipalPaid" Title="Principal Paid" Format="C" />
